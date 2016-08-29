@@ -1,5 +1,7 @@
-extern crate tokio;
-extern crate tokio_ssl;
+extern crate tokio_core;
+extern crate tokio_proto;
+extern crate tokio_tls;
+extern crate tokio_service;
 extern crate futures;
 extern crate bytes;
 extern crate time;
@@ -14,12 +16,12 @@ pub use request::Request;
 pub use response::Response;
 pub use ssl::NewSslContext;
 
-use tokio::{server, Service, NewService};
-use tokio::io::Framed;
-use tokio::proto::pipeline;
-use tokio::reactor::Reactor;
-use tokio::util::future::Empty;
-use futures::{Future, Map};
+use tokio_service::Service;
+use tokio_proto::{server, NewService};
+use tokio_proto::io::Framed;
+use tokio_proto::proto::pipeline;
+use tokio_core::Loop;
+use futures::{Future, Map, Empty};
 use bytes::BlockBuf;
 use std::io;
 use std::net::SocketAddr;
@@ -50,12 +52,11 @@ impl Server {
     pub fn serve<T>(self, new_service: T)
         where T: NewService<Req = Request, Resp = Response, Error = io::Error> + Send + 'static
     {
-        let reactor = Reactor::default().unwrap();
-        let handle = reactor.handle();
+        let lp = Loop::new().unwrap();
         let addr = self.addr;
         let ssl = self.ssl;
 
-        server::listen(&handle, addr, move |socket| {
+        server::listen(&lp.handle(), addr, move |socket| {
             // Create the service
             let service = try!(new_service.new_service());
             let service = HttpService { inner: service };
@@ -78,7 +79,7 @@ impl Server {
             pipeline::Server::new(service, transport)
         }).unwrap();
 
-        reactor.run().unwrap();
+        lp.run(futures::empty::<(), ()>()).unwrap();
     }
 }
 
